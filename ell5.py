@@ -107,7 +107,7 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="2y", interval="5m"):
+def download_data_multi(tickers, period="7d", interval="5m"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -130,7 +130,7 @@ def download_data_multi(tickers, period="2y", interval="5m"):
     return out
 
 @st.cache_data(show_spinner=False)
-def load_history_for_ticker(ticker, period="5y", interval="5"):
+def load_history_for_ticker(ticker, period="7d", interval="5"):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, threads=True)
         return df
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
