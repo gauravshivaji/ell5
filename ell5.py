@@ -107,7 +107,7 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="2y", interval="1d"):
+def download_data_multi(tickers, period="2y", interval="5m"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -130,7 +130,7 @@ def download_data_multi(tickers, period="2y", interval="1d"):
     return out
 
 @st.cache_data(show_spinner=False)
-def load_history_for_ticker(ticker, period="5y", interval="1d"):
+def load_history_for_ticker(ticker, period="5y", interval="5"):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, threads=True)
         return df
@@ -633,7 +633,7 @@ if run_analysis:
 
     with tab3:
         ticker_for_chart = st.selectbox("Chart Ticker", selected_tickers)
-        chart_df = yf.download(ticker_for_chart, period="6mo", interval="1d", progress=False, threads=True)
+        chart_df = yf.download(ticker_for_chart, period="7d", interval="5m", progress=False, threads=True)
         if not chart_df.empty:
             chart_df = compute_features(chart_df, sma_tuple, support_window, zz_pct, zz_min_bars).dropna()
             if not chart_df.empty:
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
