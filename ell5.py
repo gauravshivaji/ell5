@@ -401,33 +401,65 @@ def get_features_for_all(tickers, sma_windows, support_window, zz_pct, zz_min_ba
     return pd.DataFrame(features_list)
 
 # ---------------- RULE-BASED STRATEGY (+ Elliott) ----------------
-def predict_buy_sell_rule(features: pd.DataFrame, rsi_buy=35, rsi_sell=65) -> dict:
-    results = {}
-    
-    # --- BUY logic ---
-    results["Reversal_Buy"] = (
-        (features["RSI"] < rsi_buy) &
-        (features["Bullish_Div"] == 1) &
-        (features["Close"] > features["SMA20"])
-    )
-    results["Trend_Buy"] = (
-        (features["Close"] > features["SMA50"]) &
-        (features["SMA20"] > features["SMA50"])
-    )
-    ew_only_buy = (features.get("Elliott_Phase_Code", 0) in [1, 2])
-    
-    # --- SELL logic ---
-    base_sell_core = (
-        (features["RSI"] > rsi_sell) &
-        (features["Bearish_Div"] == 1) &
-        (features["Close"] < features["SMA20"])
-    )
-    ew_only_sell = (features.get("Elliott_Phase_Code", 0) in [-1, -2])
-    
-    results["Sell_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | ew_only_buy
-    results["Buy_Point"] = base_sell_core | ew_only_sell
-    
-    return results
+def predict_buy_sell_rule(features, rsi_buy=35, rsi_sell=65):
+    """
+    features: can be a Pandas DataFrame (row-wise signals) or dict/Series (single row).
+    Returns dict of Boolean Series or bools.
+    """
+    # Case 1: single row (dict or Series)
+    if isinstance(features, (dict, pd.Series)):
+        rsi = features.get("RSI", np.nan)
+        close = features.get("Close", np.nan)
+        sma20 = features.get("SMA20", np.nan)
+        sma50 = features.get("SMA50", np.nan)
+        bull_div = features.get("Bullish_Div", False)
+        bear_div = features.get("Bearish_Div", False)
+        ew_code = features.get("Elliott_Phase_Code", 0)
+
+        reversal_buy = (rsi < rsi_buy) and bull_div and (close > sma20)
+        trend_buy    = (close > sma50) and (sma20 > sma50)
+        ew_buy       = ew_code in [1, 2]
+
+        reversal_sell = (rsi > rsi_sell) and bear_div and (close < sma20)
+        ew_sell       = ew_code in [-1, -2]
+
+        return {
+            "Reversal_Buy": reversal_buy,
+            "Trend_Buy": trend_buy,
+            "Elliott_Buy": ew_buy,
+            "Buy_Point": reversal_buy or trend_buy or ew_buy,
+            "Reversal_Sell": reversal_sell,
+            "Elliott_Sell": ew_sell,
+            "Sell_Point": reversal_sell or ew_sell
+        }
+
+    # Case 2: DataFrame (vectorized rules)
+    elif isinstance(features, pd.DataFrame):
+        results = {}
+        results["Reversal_Buy"] = (
+            (features["RSI"] < rsi_buy) &
+            (features["Bullish_Div"] == 1) &
+            (features["Close"] > features["SMA20"])
+        )
+        results["Trend_Buy"] = (
+            (features["Close"] > features["SMA50"]) &
+            (features["SMA20"] > features["SMA50"])
+        )
+        results["Elliott_Buy"] = features["Elliott_Phase_Code"].isin([1, 2])
+
+        results["Reversal_Sell"] = (
+            (features["RSI"] > rsi_sell) &
+            (features["Bearish_Div"] == 1) &
+            (features["Close"] < features["SMA20"])
+        )
+        results["Elliott_Sell"] = features["Elliott_Phase_Code"].isin([-1, -2])
+
+        results["Sell_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | results["Elliott_Buy"]
+        results["Buy_Point"] = results["Reversal_Sell"] | results["Elliott_Sell"]
+        return results
+
+    else:
+        raise TypeError("predict_buy_sell_rule requires a dict, Series, or DataFrame")
 
 
 
@@ -691,6 +723,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
