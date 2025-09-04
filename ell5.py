@@ -279,22 +279,13 @@ def elliott_phase_from_pivots(pivots: pd.DataFrame):
                 out.update({"phase": "CorrectionDown", "wave_no": 3, "bearish": True})
     return out
 
-def add_elliott_features_core(df_close: pd.Series, timeframe="15m"):
-    """
-    timeframe: "15m", "1d", "1w"
-    """
-    if timeframe == "15m":
-        pct, min_bars = 0.005, 10   # 0.5%, ~2.5h spacing
-    elif timeframe == "1d":
-        pct, min_bars = 0.05, 5     # 5%, ~5 days
-    elif timeframe == "1w":
-        pct, min_bars = 0.1, 3      # 10%, ~3 weeks
-    else:
-        pct, min_bars = 0.05, 5     # safe fallback
-
+def add_elliott_features_core(df_close: pd.Series):
+    # tuned for 15-minute chart
+    pct, min_bars = 0.005, 10   # 0.5% move, min 2.5 hours between pivots
     piv = zigzag_pivots(df_close, pct=pct, min_bars=min_bars)
     phase = elliott_phase_from_pivots(piv)
     return phase, piv
+
 
 
 # ---------------- FEATURE ENGINEERING ----------------
@@ -411,55 +402,35 @@ def get_features_for_all(tickers, sma_windows, support_window, zz_pct, zz_min_ba
     return pd.DataFrame(features_list)
 
 # ---------------- RULE-BASED STRATEGY (+ Elliott) ----------------
-def predict_buy_sell_rule(df, rsi_buy=30, rsi_sell=70):
-    if df.empty:
-        return df
-    results = df.copy()
-
-    # --- Core patterns (relaxed thresholds) ---
-    reversal_buy_core = (
-        (results["RSI"] < rsi_buy) &
-        (results.get("Bullish_Div", True)) &  # default True if missing
-        (np.abs(results["Close"] - results.get("Support", results["Close"])) < 0.1 * results["Close"]) &
-        (results["Close"] > results["SMA20"])
+def predict_buy_sell_rule(features: dict) -> dict:
+    results = {}
+    
+    # --- BUY logic ---
+    results["Reversal_Buy"] = (
+        (features["RSI"] < 35) &
+        (features["Divergence_Bull"] == 1) &
+        (features["Close"] > features["SMA20"])
     )
-
-    trend_buy_core = (
-        (results["Close"] > results["SMA20"]) &
-        (results["SMA20"] > results["SMA50"]) &
-        (results["RSI"] > 40)  # lower threshold
+    results["Trend_Buy"] = (
+        (features["Close"] > features["SMA50"]) &
+        (features["SMA20"] > features["SMA50"])
     )
-
+    ew_only_buy = (features.get("Elliott_Phase_Code", 0) in [1, 2])  # ImpulseUp or CorrectionUp
+    
+    # --- SELL logic ---
     base_sell_core = (
-        ((results["RSI"] > rsi_sell) & (results.get("Bearish_Div", True))) |
-        (results["Close"] < results.get("Support", results["Close"])) |
-        ((results["SMA20"] < results["SMA50"]) & (results["SMA50"] < results["SMA200"]))
+        (features["RSI"] > 65) &
+        (features["Divergence_Bear"] == 1) &
+        (features["Close"] < features["SMA20"])
     )
-
-    # --- Elliott confirmations (safe defaults) ---
-    ew_bull = (results.get("Elliott_Bullish_Int", 0) == 1) | (results.get("Elliott_Phase_Code", 0) == 1)
-    ew_bear = (results.get("Elliott_Bearish_Int", 0) == 1) | (results.get("Elliott_Phase_Code", 0) == -1)
-
-    # --- Buy/Sell refinements ---
-    results["Reversal_Buy"] = reversal_buy_core | ew_bull
-    results["Trend_Buy"] = trend_buy_core |ew_bull
-
-    ew_only_buy = (
-        ew_bull &
-        (results["RSI"].between(35, 65)) &  # much wider zone
-        (results["Close"] > results["SMA20"])
-    )
-
-    ew_only_sell = (
-        ew_bear &
-        (results["RSI"] > 50)  # less strict
-    )
-
+    ew_only_sell = (features.get("Elliott_Phase_Code", 0) in [-1, -2])  # ImpulseDown or CorrectionDown
+    
     # --- Final signals ---
     results["Sell_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | ew_only_buy
     results["Buy_Point"] = base_sell_core | ew_only_sell
-
+    
     return results
+
 
 
 
@@ -479,53 +450,45 @@ def label_from_future_returns(df, horizon=60, buy_thr=0.03, sell_thr=-0.03):
     return label
 
 # ---------------- ML DATASET ----------------
-def build_ml_dataset_for_tickers(
-    tickers, sma_windows, support_window,
-    label_mode="rule",
-    horizon=60, buy_thr=0.03, sell_thr=-0.03,
-    rsi_buy=30, rsi_sell=70,
-    min_rows=250,
-    zz_pct=0.05, zz_min_bars=5
-):
-    X_list, y_list, meta_list = [], [], []
-    feature_cols = None
-
-    for t in stqdm(tickers, desc="Preparing ML data"):
-        hist = load_history_for_ticker(t, period="5y", interval="1d")
-        if hist is None or hist.empty or len(hist) < min_rows:
+def build_ml_dataset_for_tickers(tickers, period="60d", interval="15m"):
+    all_data = []
+    
+    for ticker in tickers:
+        df = load_history_for_ticker(ticker, period=period, interval=interval)
+        if df is None or df.empty:
             continue
+        
+        # Features
+        df["SMA20"] = df["Close"].rolling(20).mean()
+        df["SMA50"] = df["Close"].rolling(50).mean()
+        df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+        
+        # Divergences
+        df["Divergence_Bull"] = ((df["Close"] < df["Close"].shift(1)) &
+                                 (df["RSI"] > df["RSI"].shift(1))).astype(int)
+        df["Divergence_Bear"] = ((df["Close"] > df["Close"].shift(1)) &
+                                 (df["RSI"] < df["RSI"].shift(1))).astype(int)
+        
+        # Elliott
+        phase, piv = add_elliott_features_core(df["Close"])
+        df["Elliott_Phase_Code"] = phase.get("phase", "Unknown")
+        df["Elliott_Wave_No"] = phase.get("wave_no", 0)
+        df["Elliott_Bullish"] = int(phase.get("bullish", False))
+        df["Elliott_Bearish"] = int(phase.get("bearish", False))
+        
+        # Label: simple rule → Buy=1, Sell=-1, Hold=0
+        sigs = predict_buy_sell_rule(df.iloc[-1].to_dict())
+        df["Signal"] = 0
+        if sigs["Buy_Point"]:
+            df["Signal"].iloc[-1] = 1
+        elif sigs["Sell_Point"]:
+            df["Signal"].iloc[-1] = -1
+        
+        df["Ticker"] = ticker
+        all_data.append(df)
+    
+    return pd.concat(all_data, axis=0) if all_data else pd.DataFrame()
 
-        feat = compute_features(hist, sma_windows, support_window, zz_pct, zz_min_bars)
-        if feat.empty:
-            continue
-
-        if label_mode == "rule":
-            y = label_from_rule_based(feat, rsi_buy=rsi_buy, rsi_sell=rsi_sell)
-        else:
-            y = label_from_future_returns(feat, horizon=horizon, buy_thr=buy_thr, sell_thr=sell_thr)
-
-        data = feat.join(y.rename("Label")).dropna()
-        if data.empty:
-            continue
-
-        # Ensure EW ints are present (they are numeric already)
-        drop_cols = set(["Label", "Support", "Bullish_Div", "Bearish_Div"])
-        use = data.select_dtypes(include=[np.number]).drop(columns=list(drop_cols & set(data.columns)), errors="ignore")
-
-        if feature_cols is None:
-            feature_cols = list(use.columns)
-
-        X_list.append(use[feature_cols])
-        y_list.append(data["Label"])
-        meta_list.append(pd.Series([t] * len(use), index=use.index, name="Ticker"))
-
-    if not X_list:
-        return pd.DataFrame(), pd.Series(dtype=int), [], []
-
-    X = pd.concat(X_list, axis=0)
-    y = pd.concat(y_list, axis=0)
-    tickers_series = pd.concat(meta_list, axis=0)
-    return X, y, feature_cols, tickers_series
 
 def train_rf_classifier(X, y, random_state=42):
     if X.empty or y.empty:
@@ -655,7 +618,9 @@ if run_analysis:
 
                 latest = chart_df.iloc[-1]
                 phase_code = int(latest.get("Elliott_Phase_Code", 0))
-                phase_text = {1:"ImpulseUp", -1:"ImpulseDown", 2:"CorrectionUp", -2:"CorrectionDown", 0:"Unknown"}.get(phase_code, "Unknown")
+                phase_text = {1
+                              
+                              :"ImpulseUp", -1:"ImpulseDown", 2:"CorrectionUp", -2:"CorrectionDown", 0:"Unknown"}.get(phase_code, "Unknown")
                 wave_no = int(latest.get("Elliott_Wave_No", 0))
                 st.caption(f"🌀 Elliott Phase: **{phase_text}**  |  Wave#: **{wave_no}**  |  ZigZag: {zz_pct*100:.1f}% / {zz_min_bars} bars")
         else:
@@ -727,6 +692,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
