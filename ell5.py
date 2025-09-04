@@ -401,34 +401,34 @@ def get_features_for_all(tickers, sma_windows, support_window, zz_pct, zz_min_ba
     return pd.DataFrame(features_list)
 
 # ---------------- RULE-BASED STRATEGY (+ Elliott) ----------------
-def predict_buy_sell_rule(features: dict, rsi_buy=35, rsi_sell=65) -> dict:
+def predict_buy_sell_rule(features: pd.DataFrame, rsi_buy=35, rsi_sell=65) -> dict:
     results = {}
     
     # --- BUY logic ---
     results["Reversal_Buy"] = (
-        (features["RSI"] < 35) &
-        (features["Divergence_Bull"] == 1) &
+        (features["RSI"] < rsi_buy) &
+        (features["Bullish_Div"] == 1) &
         (features["Close"] > features["SMA20"])
     )
     results["Trend_Buy"] = (
         (features["Close"] > features["SMA50"]) &
         (features["SMA20"] > features["SMA50"])
     )
-    ew_only_buy = (features.get("Elliott_Phase_Code", 0) in [1, 2])  # ImpulseUp or CorrectionUp
+    ew_only_buy = (features.get("Elliott_Phase_Code", 0) in [1, 2])
     
     # --- SELL logic ---
     base_sell_core = (
-        (features["RSI"] > 65) &
-        (features["Divergence_Bear"] == 1) &
+        (features["RSI"] > rsi_sell) &
+        (features["Bearish_Div"] == 1) &
         (features["Close"] < features["SMA20"])
     )
-    ew_only_sell = (features.get("Elliott_Phase_Code", 0) in [-1, -2])  # ImpulseDown or CorrectionDown
+    ew_only_sell = (features.get("Elliott_Phase_Code", 0) in [-1, -2])
     
-    # --- Final signals ---
     results["Sell_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | ew_only_buy
     results["Buy_Point"] = base_sell_core | ew_only_sell
     
     return results
+
 
 
 
@@ -691,6 +691,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
