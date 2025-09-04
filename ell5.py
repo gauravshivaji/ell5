@@ -138,7 +138,7 @@ def load_history_for_ticker(ticker, period="60d", interval="15m"):
         return pd.DataFrame()
 
 # ---------------- ELLIOTT WAVE (ZigZag + Heuristics) ----------------
-def zigzag_pivots(close: pd.Series, pct=0.05, min_bars=5):
+def zigzag_pivots(close: pd.Series, pct=0.005, min_bars=10):
     """
     Dependency-free ZigZag: pivots when price reverses by >= pct from last pivot and min_bars elapsed.
     Returns DataFrame with columns ['idx','price','type'] where type in {'H','L'}.
@@ -279,10 +279,23 @@ def elliott_phase_from_pivots(pivots: pd.DataFrame):
                 out.update({"phase": "CorrectionDown", "wave_no": 3, "bearish": True})
     return out
 
-def add_elliott_features_core(df_close: pd.Series, pct=0.05, min_bars=5):
+def add_elliott_features_core(df_close: pd.Series, timeframe="15m"):
+    """
+    timeframe: "15m", "1d", "1w"
+    """
+    if timeframe == "15m":
+        pct, min_bars = 0.005, 10   # 0.5%, ~2.5h spacing
+    elif timeframe == "1d":
+        pct, min_bars = 0.05, 5     # 5%, ~5 days
+    elif timeframe == "1w":
+        pct, min_bars = 0.1, 3      # 10%, ~3 weeks
+    else:
+        pct, min_bars = 0.05, 5     # safe fallback
+
     piv = zigzag_pivots(df_close, pct=pct, min_bars=min_bars)
     phase = elliott_phase_from_pivots(piv)
     return phase, piv
+
 
 # ---------------- FEATURE ENGINEERING ----------------
 def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.05, zz_min_bars=5):
@@ -714,6 +727,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
