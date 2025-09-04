@@ -289,7 +289,7 @@ def add_elliott_features_core(df_close: pd.Series):
 
 
 # ---------------- FEATURE ENGINEERING ----------------
-def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.05, zz_min_bars=5):
+def compute_features(df, sma_windows=(20, 50), support_window=20, zz_pct=0.005, zz_min_bars=10):
     # Flatten MultiIndex columns if any
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
@@ -305,23 +305,24 @@ def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.
     except Exception:
         df["RSI"] = np.nan
 
-    # SMAs
+    # SMAs (short-term for intraday)
     for win in sma_windows:
         df[f"SMA{win}"] = df["Close"].rolling(window=win, min_periods=1).mean()
 
-    # Support (simple rolling min)
+    # Support (shorter lookback for 15m)
     df["Support"] = df["Close"].rolling(window=support_window, min_periods=1).min()
 
-    # Divergences (very lightweight)
+    # Divergences
     df["RSI_Direction"] = df["RSI"].diff(5)
     df["Price_Direction"] = df["Close"].diff(5)
     df["Bullish_Div"] = (df["RSI_Direction"] > 0) & (df["Price_Direction"] < 0)
     df["Bearish_Div"] = (df["RSI_Direction"] < 0) & (df["Price_Direction"] > 0)
 
-    # Returns and distances
+    # Returns
     for w in (1, 3, 5, 10):
         df[f"Ret_{w}"] = df["Close"].pct_change(w)
 
+    # Distances
     for win in sma_windows:
         df[f"Dist_SMA{win}"] = (df["Close"] - df[f"SMA{win}"]) / df[f"SMA{win}"]
 
@@ -329,19 +330,16 @@ def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.
     for col in ["RSI"] + [f"SMA{w}" for w in sma_windows]:
         df[f"{col}_slope"] = df[col].diff()
 
-    # --- Elliott features ---
+    # Elliott features (tuned for 15m)
     try:
-        phase, piv = add_elliott_features_core(df["Close"], pct=zz_pct, min_bars=zz_min_bars)
-        phase_map = {
-            "ImpulseUp": 1, "ImpulseDown": -1,
-            "CorrectionUp": 2, "CorrectionDown": -2,
-            "Unknown": 0
-        }
+        phase, piv = add_elliott_features_core(df["Close"])
+        phase_map = {"ImpulseUp": 1, "ImpulseDown": -1,
+                     "CorrectionUp": 2, "CorrectionDown": -2,
+                     "Unknown": 0}
         df["Elliott_Phase_Code"] = phase_map.get(phase["phase"], 0)
         df["Elliott_Wave_No"] = int(phase.get("wave_no", 0))
         df["Elliott_Bullish"] = bool(phase.get("bullish", False))
         df["Elliott_Bearish"] = bool(phase.get("bearish", False))
-        # numeric versions for ML selection
         df["Elliott_Bullish_Int"] = df["Elliott_Bullish"].astype(int)
         df["Elliott_Bearish_Int"] = df["Elliott_Bearish"].astype(int)
     except Exception:
@@ -353,6 +351,7 @@ def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.
         df["Elliott_Bearish_Int"] = 0
 
     return df
+
 
 
 
@@ -692,6 +691,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
