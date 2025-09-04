@@ -107,7 +107,7 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="2y", interval="1d"):
+def download_data_multi(tickers, period="60d", interval="15m"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -138,7 +138,7 @@ def load_history_for_ticker(ticker, period="5y", interval="1d"):
         return pd.DataFrame()
 
 # ---------------- ELLIOTT WAVE (ZigZag + Heuristics) ----------------
-def zigzag_pivots(close: pd.Series, pct=0.05, min_bars=5):
+def zigzag_pivots(close: pd.Series, pct=0.005, min_bars=10):
     """
     Dependency-free ZigZag: pivots when price reverses by >= pct from last pivot and min_bars elapsed.
     Returns DataFrame with columns ['idx','price','type'] where type in {'H','L'}.
@@ -279,13 +279,13 @@ def elliott_phase_from_pivots(pivots: pd.DataFrame):
                 out.update({"phase": "CorrectionDown", "wave_no": 3, "bearish": True})
     return out
 
-def add_elliott_features_core(df_close: pd.Series, pct=0.05, min_bars=5):
+def add_elliott_features_core(df_close: pd.Series, pct=0.005, min_bars=5):
     piv = zigzag_pivots(df_close, pct=pct, min_bars=min_bars)
     phase = elliott_phase_from_pivots(piv)
     return phase, piv
 
 # ---------------- FEATURE ENGINEERING ----------------
-def compute_features(df, sma_windows=(20, 50, 200), support_window=30, zz_pct=0.05, zz_min_bars=5):
+def compute_features(df, sma_windows=(20, 50), support_window=30, zz_pct=0.005, zz_min_bars=10):
     # Flatten MultiIndex columns if any
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
@@ -472,7 +472,7 @@ def build_ml_dataset_for_tickers(
     horizon=60, buy_thr=0.03, sell_thr=-0.03,
     rsi_buy=30, rsi_sell=70,
     min_rows=250,
-    zz_pct=0.05, zz_min_bars=5
+    zz_pct=0.005, zz_min_bars=10
 ):
     X_list, y_list, meta_list = [], [], []
     feature_cols = None
@@ -567,7 +567,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Elliott (ZigZag) Tuning")
-    zz_pct = st.slider("ZigZag reversal (%)", 2, 12, 5, help="Sensitivity for swing detection (5% = 0.05).") / 100.0
+    zz_pct = st.slider("ZigZag reversal (%)", 2, 12, 5, help="Sensitivity for swing detection (5% = 0.005).") / 100.0
     zz_min_bars = st.slider("Min bars between pivots", 3, 15, 5)
 
     st.markdown("---")
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
