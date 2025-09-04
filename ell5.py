@@ -107,7 +107,7 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="60d", interval="15m"):
+def download_data_multi(tickers, period="7d", interval="5m"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
