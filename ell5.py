@@ -130,7 +130,7 @@ def download_data_multi(tickers, period="7d", interval="5m"):
     return out
 
 @st.cache_data(show_spinner=False)
-def load_history_for_ticker(ticker, period="5y", interval="1d"):
+def load_history_for_ticker(ticker, period="6m", interval="15m"):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, threads=True)
         return df
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
