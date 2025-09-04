@@ -620,7 +620,8 @@ if run_analysis:
         if feats.empty:
             st.info("No rule-based buy signals.")
         else:
-            df_buy = preds_rule[preds_rule["Buy_Point"]].copy()
+            df_buy = feats[preds_rule["Buy_Point"]].copy()
+
             # add TradingView link next to ticker
             df_buy["TradingView"] = df_buy["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
             # Recent useful columns
@@ -632,7 +633,8 @@ if run_analysis:
         if feats.empty:
             st.info("No rule-based sell signals.")
         else:
-            df_sell = preds_rule[preds_rule["Sell_Point"]].copy()
+            df_sell = feats[preds_rule["Sell_Point"]].copy()
+
             df_sell["TradingView"] = df_sell["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
             show_cols = ["Ticker","TradingView","Close","RSI"]
             cols = [c for c in show_cols if c in df_sell.columns] + [c for c in df_sell.columns if c not in show_cols]
@@ -723,6 +725,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
