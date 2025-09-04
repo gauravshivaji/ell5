@@ -401,7 +401,7 @@ def get_features_for_all(tickers, sma_windows, support_window, zz_pct, zz_min_ba
     return pd.DataFrame(features_list)
 
 # ---------------- RULE-BASED STRATEGY (+ Elliott) ----------------
-def predict_buy_sell_rule(features: dict) -> dict:
+def predict_buy_sell_rule(features: dict, rsi_buy=35, rsi_sell=65) -> dict:
     results = {}
     
     # --- BUY logic ---
@@ -691,6 +691,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
