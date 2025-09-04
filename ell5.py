@@ -478,7 +478,7 @@ def build_ml_dataset_for_tickers(
     feature_cols = None
 
     for t in stqdm(tickers, desc="Preparing ML data"):
-        hist = load_history_for_ticker(t, period="5y", interval="1d")
+        hist = load_history_for_ticker(t, period="7d", interval="5m")
         if hist is None or hist.empty or len(hist) < min_rows:
             continue
 
@@ -714,6 +714,7 @@ if run_analysis:
         )
 
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
 
 
