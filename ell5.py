@@ -676,14 +676,20 @@ if run_analysis:
                             continue
                         proba = clf.predict_proba(row)[0] if hasattr(clf, "predict_proba") else None
                         pred = clf.predict(row)
+                        
+                        # --- MODIFICATION 1 START: Capture Close Price ---
+                        close_price = row['Close'].iloc[0] if 'Close' in row.columns else np.nan
                         rows.append({
                             "Ticker": t,
-                            "ML_Pred": {1: "BUY", 0: "HOLD", -1: "SELL"}.get(int(pred), "HOLD"),
+                            "Close": close_price, # Add the closing price
+                            "ML_Signal": {1: "BUY", 0: "HOLD", -1: "SELL"}.get(int(pred), "HOLD"),
                             "Prob_Buy": float(proba[list(clf.classes_).index(1)]) if proba is not None and 1 in clf.classes_ else np.nan,
                             "Prob_Hold": float(proba[list(clf.classes_).index(0)]) if proba is not None and 0 in clf.classes_ else np.nan,
                             "Prob_Sell": float(proba[list(clf.classes_).index(-1)]) if proba is not None and -1 in clf.classes_ else np.nan,
                         })
-                    ml_df = pd.DataFrame(rows).sort_values(["ML_Pred", "Prob_Buy"], ascending=[True, False])
+                        # --- MODIFICATION 1 END ---
+                        
+                    ml_df = pd.DataFrame(rows).sort_values(["ML_Signal", "Prob_Buy"], ascending=[True, False])
 
                     ml_df["TradingView"] = ml_df["Ticker"].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace('.NS','')}")
 
@@ -694,9 +700,26 @@ if run_analysis:
                             "TradingView": st.column_config.LinkColumn(
                                 "TradingView",
                                 display_text="📈 Chart"
-                            )
+                            ),
+                            "Close": st.column_config.NumberColumn(format="%.2f"),
+                            "Prob_Buy": st.column_config.ProgressColumn(format="%.2f", min_value=0, max_value=1),
+                            "Prob_Sell": st.column_config.ProgressColumn(format="%.2f", min_value=0, max_value=1),
+                            "Prob_Hold": st.column_config.ProgressColumn(format="%.2f", min_value=0, max_value=1),
                         }
                     )
+
+                    # --- MODIFICATION 2 START: Add Download Button ---
+                    # Prepare a clean DataFrame for CSV download
+                    csv_df = ml_df.drop(columns=['TradingView'], errors='ignore')
+
+                    st.download_button(
+                        label="📥 Download ML Signals as CSV",
+                        data=csv_df.to_csv(index=False).encode('utf-8'),
+                        file_name='nifty500_ml_signals.csv',
+                        mime='text/csv',
+                    )
+                    # --- MODIFICATION 2 END ---
+
 
     if 'preds_rule' in locals() and preds_rule is not None and not preds_rule.empty:
         st.download_button(
@@ -708,4 +731,3 @@ if run_analysis:
 
 st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
-
