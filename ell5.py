@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import ta
+from datetime import datetime  # <--- MODIFICATION 1: IMPORT DATETIME
+
 
 # ML imports (optional)
 try:
@@ -711,11 +713,13 @@ if run_analysis:
                     # --- MODIFICATION 2 START: Add Download Button ---
                     # Prepare a clean DataFrame for CSV download
                     csv_df = ml_df.drop(columns=['TradingView'], errors='ignore')
-
+                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                   
                     st.download_button(
                         label="📥 Download ML Signals as CSV",
                         data=csv_df.to_csv(index=False).encode('utf-8'),
-                        file_name='nifty500_ml_signals.csv',
+                        file_name=f'ml_signals_{timestamp_str}.csv',
                         mime='text/csv',
                     )
                     # --- MODIFICATION 2 END ---
@@ -731,3 +735,4 @@ if run_analysis:
 
 st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
+
