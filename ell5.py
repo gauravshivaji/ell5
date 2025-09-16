@@ -14,8 +14,8 @@ except Exception:
     SKLEARN_OK = False
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Nifty500 Buy/Sell Predictor + Elliott Wave", layout="wide")
-st.title("📊 Nifty500 Buy/Sell Predictor — Rules + Elliott Wave + ML")
+st.set_page_config(page_title="Nifty500 Intraday (30min) Predictor", layout="wide")
+st.title("📊 Nifty500 Intraday (30min) Predictor — Rules + Elliott Wave + ML")
 
 # ---------------- TICKERS ----------------
 NIFTY500_TICKERS = [
@@ -107,7 +107,7 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="7d", interval="5m"):
+def download_data_multi(tickers, period="60d", interval="30m"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -130,7 +130,7 @@ def download_data_multi(tickers, period="7d", interval="5m"):
     return out
 
 @st.cache_data(show_spinner=False)
-def load_history_for_ticker(ticker, period="6m", interval="15m"):
+def load_history_for_ticker(ticker, period="60d", interval="30m"):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, threads=True)
         return df
@@ -279,7 +279,7 @@ def elliott_phase_from_pivots(pivots: pd.DataFrame):
                 out.update({"phase": "CorrectionDown", "wave_no": 3, "bearish": True})
     return out
 
-def add_elliott_features_core(df_close: pd.Series, pct=0.005, min_bars=5):
+def add_elliott_features_core(df_close: pd.Series, pct=0.005, min_bars=10):
     piv = zigzag_pivots(df_close, pct=pct, min_bars=min_bars)
     phase = elliott_phase_from_pivots(piv)
     return phase, piv
@@ -350,9 +350,6 @@ def compute_features(df, sma_windows=(20, 50), support_window=30, zz_pct=0.005, 
 
     return df
 
-
-
-
 def get_latest_features_for_ticker(ticker_df, ticker, sma_windows, support_window, zz_pct, zz_min_bars):
     df = compute_features(ticker_df, sma_windows, support_window, zz_pct, zz_min_bars).dropna()
     if df.empty:
@@ -370,8 +367,6 @@ def get_latest_features_for_ticker(ticker_df, ticker, sma_windows, support_windo
         "Elliott_Wave_No": int(latest["Elliott_Wave_No"]) if "Elliott_Wave_No" in latest else 0,
         "Elliott_Bullish_Int": int(latest["Elliott_Bullish_Int"]) if "Elliott_Bullish_Int" in latest else 0,
         "Elliott_Bearish_Int": int(latest["Elliott_Bearish_Int"]) if "Elliott_Bearish_Int" in latest else 0,
-
-        
     }
 
 def get_features_for_all(tickers, sma_windows, support_window, zz_pct, zz_min_bars):
@@ -420,7 +415,7 @@ def predict_buy_sell_rule(df, rsi_buy=30, rsi_sell=70):
     base_sell_core = (
         ((results["RSI"] > rsi_sell) & (results.get("Bearish_Div", True))) |
         (results["Close"] < results.get("Support", results["Close"])) |
-        ((results["SMA20"] < results["SMA50"]) & (results["SMA50"] < results["SMA200"]))
+        (results["SMA20"] < results["SMA50"])
     )
 
     # --- Elliott confirmations (safe defaults) ---
@@ -429,7 +424,7 @@ def predict_buy_sell_rule(df, rsi_buy=30, rsi_sell=70):
 
     # --- Buy/Sell refinements ---
     results["Reversal_Buy"] = reversal_buy_core | ew_bull
-    results["Trend_Buy"] = trend_buy_core |ew_bull
+    results["Trend_Buy"] = trend_buy_core | ew_bull
 
     ew_only_buy = (
         ew_bull &
@@ -443,12 +438,10 @@ def predict_buy_sell_rule(df, rsi_buy=30, rsi_sell=70):
     )
 
     # --- Final signals ---
-    results["Sell_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | ew_only_buy
-    results["Buy_Point"] = base_sell_core | ew_only_sell
+    results["Buy_Point"]  = results["Reversal_Buy"] | results["Trend_Buy"] | ew_only_buy
+    results["Sell_Point"] = base_sell_core | ew_only_sell
 
     return results
-
-
 
 # ---------------- LABELS FOR ML ----------------
 def label_from_rule_based(df, rsi_buy=30, rsi_sell=70):
@@ -458,7 +451,8 @@ def label_from_rule_based(df, rsi_buy=30, rsi_sell=70):
     label[rules["Sell_Point"]] = -1
     return label
 
-def label_from_future_returns(df, horizon=60, buy_thr=0.03, sell_thr=-0.03):
+def label_from_future_returns(df, horizon=13, buy_thr=0.01, sell_thr=-0.01):
+    # horizon=13 is approx 1 trading day on 30m chart
     fut_ret = df["Close"].shift(-horizon) / df["Close"] - 1.0
     label = pd.Series(0, index=df.index, dtype=int)
     label[fut_ret >= buy_thr] = 1
@@ -469,7 +463,7 @@ def label_from_future_returns(df, horizon=60, buy_thr=0.03, sell_thr=-0.03):
 def build_ml_dataset_for_tickers(
     tickers, sma_windows, support_window,
     label_mode="rule",
-    horizon=60, buy_thr=0.03, sell_thr=-0.03,
+    horizon=13, buy_thr=0.01, sell_thr=-0.01,
     rsi_buy=30, rsi_sell=70,
     min_rows=250,
     zz_pct=0.005, zz_min_bars=10
@@ -478,7 +472,7 @@ def build_ml_dataset_for_tickers(
     feature_cols = None
 
     for t in stqdm(tickers, desc="Preparing ML data"):
-        hist = load_history_for_ticker(t, period="7d", interval="5m")
+        hist = load_history_for_ticker(t, period="60d", interval="30m")
         if hist is None or hist.empty or len(hist) < min_rows:
             continue
 
@@ -495,7 +489,6 @@ def build_ml_dataset_for_tickers(
         if data.empty:
             continue
 
-        # Ensure EW ints are present (they are numeric already)
         drop_cols = set(["Label", "Support", "Bullish_Div", "Bearish_Div"])
         use = data.select_dtypes(include=[np.number]).drop(columns=list(drop_cols & set(data.columns)), errors="ignore")
 
@@ -523,7 +516,7 @@ def train_rf_classifier(X, y, random_state=42):
             X, y, test_size=0.2, shuffle=True, stratify=stratify_opt, random_state=random_state
         )
     except Exception:
-        X_train, X_test, y_train, y_test = X.iloc[:-200], X.iloc[-200:], y.iloc[:-200], y.iloc[-200:]
+        X_train, X_test, y_train, y_test = X.iloc[:-100], X.iloc[-100:], y.iloc[:-100], y.iloc[-100:]
 
     clf = RandomForestClassifier(
         n_estimators=300,
@@ -539,7 +532,7 @@ def train_rf_classifier(X, y, random_state=42):
     return clf, acc, report
 
 def latest_feature_row_for_ticker(ticker, sma_windows, support_window, feature_cols, zz_pct, zz_min_bars):
-    hist = load_history_for_ticker(ticker, period="3y", interval="1d")
+    hist = load_history_for_ticker(ticker, period="60d", interval="30m")
     if hist is None or hist.empty:
         return None
     feat = compute_features(hist, sma_windows, support_window, zz_pct, zz_min_bars).dropna()
@@ -562,13 +555,12 @@ with st.sidebar:
 
     sma_w1 = st.number_input("SMA Window 1", 5, 250, 20)
     sma_w2 = st.number_input("SMA Window 2", 5, 250, 50)
-    sma_w3 = st.number_input("SMA Window 3", 5, 250, 200)
-    support_window = st.number_input("Support Period (days)", 5, 200, 30)
+    support_window = st.number_input("Support Period (periods)", 5, 200, 30)
 
     st.markdown("---")
     st.subheader("Elliott (ZigZag) Tuning")
-    zz_pct = st.slider("ZigZag reversal (%)", 2, 12, 5, help="Sensitivity for swing detection (5% = 0.005).") / 100.0
-    zz_min_bars = st.slider("Min bars between pivots", 3, 15, 5)
+    zz_pct = st.slider("ZigZag reversal (%)", 0.1, 3.0, 0.5, step=0.1, help="Sensitivity for intraday swing detection (e.g., 0.5 = 0.5%).") / 100.0
+    zz_min_bars = st.slider("Min bars between pivots", 3, 25, 10)
 
     st.markdown("---")
     label_mode = st.radio("ML Labeling Mode", ["Rule-based (teach the rules)", "Future Returns"], index=0)
@@ -579,26 +571,27 @@ with st.sidebar:
         rsi_sell_lbl = st.slider("RSI Sell Threshold", 50, 95, 70)
         rsi_buy = rsi_buy_lbl
         rsi_sell = rsi_sell_lbl
-        ml_horizon, ml_buy_thr, ml_sell_thr = 60, 0.03, -0.03
+        ml_horizon, ml_buy_thr, ml_sell_thr = 13, 0.01, -0.01
     else:
         st.subheader("Rule thresholds (for live rule signals only)")
         rsi_buy = st.slider("RSI Buy Threshold", 5, 50, 30)
         rsi_sell = st.slider("RSI Sell Threshold", 50, 95, 70)
         st.subheader("ML labeling (future return)")
-        ml_horizon = st.number_input("Horizon (days ahead)", 2, 60, 5)
-        ml_buy_thr = st.number_input("Buy threshold (e.g., 0.03 = +3%)", 0.005, 0.20, 0.03, step=0.005, format="%.3f")
-        ml_sell_thr = st.number_input("Sell threshold (e.g., -0.03 = -3%)", -0.20, -0.005, -0.03, step=0.005, format="%.3f")
+        ml_horizon = st.number_input("Horizon (periods ahead)", 2, 60, 13, help="13 periods is approx. 1 trading day")
+        ml_buy_thr = st.number_input("Buy threshold (e.g., 0.01 = +1%)", 0.001, 0.10, 0.01, step=0.001, format="%.3f")
+        ml_sell_thr = st.number_input("Sell threshold (e.g., -0.01 = -1%)", -0.10, -0.001, -0.01, step=0.001, format="%.3f")
 
     run_analysis = st.button("Run Analysis")
 
 # ---------------- MAIN ----------------
 if run_analysis:
-    sma_tuple = (sma_w1, sma_w2, sma_w3)
+    sma_tuple = (sma_w1, sma_w2)
 
     with st.spinner("Fetching data & computing rule-based + Elliott features..."):
         feats = get_features_for_all(selected_tickers, sma_tuple, support_window, zz_pct, zz_min_bars)
         if feats is None or feats.empty:
-            st.error("No valid data for selected tickers.")
+            st.error("No valid data for selected tickers. Intraday data is limited to the last 60 days.")
+            st.stop()
         else:
             preds_rule = predict_buy_sell_rule(feats, rsi_buy, rsi_sell)
 
@@ -610,41 +603,43 @@ if run_analysis:
     ])
 
     with tab1:
-        if feats.empty:
-            st.info("No rule-based buy signals.")
-        else:
+        if 'preds_rule' in locals() and not preds_rule.empty:
             df_buy = preds_rule[preds_rule["Buy_Point"]].copy()
-            # add TradingView link next to ticker
-            df_buy["TradingView"] = df_buy["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
-            # Recent useful columns
-            show_cols = ["Ticker","TradingView","Close","RSI","Reversal_Buy","Trend_Buy"]
-            cols = [c for c in show_cols if c in df_buy.columns] + [c for c in df_buy.columns if c not in show_cols]
-            st.write(df_buy[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+            st.subheader(f"Found {len(df_buy)} Buy Signals")
+            if not df_buy.empty:
+                df_buy["TradingView"] = df_buy["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
+                show_cols = ["Ticker", "TradingView", "Close", "RSI", "Reversal_Buy", "Trend_Buy"]
+                cols = [c for c in show_cols if c in df_buy.columns] + [c for c in df_buy.columns if c not in show_cols]
+                st.write(df_buy[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        else:
+            st.info("No rule-based buy signals.")
 
     with tab2:
-        if feats.empty:
-            st.info("No rule-based sell signals.")
-        else:
+        if 'preds_rule' in locals() and not preds_rule.empty:
             df_sell = preds_rule[preds_rule["Sell_Point"]].copy()
-            df_sell["TradingView"] = df_sell["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
-            show_cols = ["Ticker","TradingView","Close","RSI"]
-            cols = [c for c in show_cols if c in df_sell.columns] + [c for c in df_sell.columns if c not in show_cols]
-            st.write(df_sell[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+            st.subheader(f"Found {len(df_sell)} Sell Signals")
+            if not df_sell.empty:
+                df_sell["TradingView"] = df_sell["Ticker"].apply(lambda x: f'<a href="https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace(".NS","")}" target="_blank">📈 Chart</a>')
+                show_cols = ["Ticker", "TradingView", "Close", "RSI"]
+                cols = [c for c in show_cols if c in df_sell.columns] + [c for c in df_sell.columns if c not in show_cols]
+                st.write(df_sell[cols].to_html(escape=False, index=False), unsafe_allow_html=True)
+        else:
+            st.info("No rule-based sell signals.")
 
     with tab3:
         ticker_for_chart = st.selectbox("Chart Ticker", selected_tickers)
-        chart_df = yf.download(ticker_for_chart, period="6mo", interval="1d", progress=False, threads=True)
+        chart_df = load_history_for_ticker(ticker_for_chart, period="10d", interval="30m") # shorter period for clarity
         if not chart_df.empty:
             chart_df = compute_features(chart_df, sma_tuple, support_window, zz_pct, zz_min_bars).dropna()
             if not chart_df.empty:
-                st.line_chart(chart_df[["Close", f"SMA{sma_w1}", f"SMA{sma_w2}", f"SMA{sma_w3}"]])
+                st.line_chart(chart_df[["Close", f"SMA{sma_w1}", f"SMA{sma_w2}"]])
                 st.line_chart(chart_df[["RSI"]])
 
                 latest = chart_df.iloc[-1]
                 phase_code = int(latest.get("Elliott_Phase_Code", 0))
                 phase_text = {1:"ImpulseUp", -1:"ImpulseDown", 2:"CorrectionUp", -2:"CorrectionDown", 0:"Unknown"}.get(phase_code, "Unknown")
                 wave_no = int(latest.get("Elliott_Wave_No", 0))
-                st.caption(f"🌀 Elliott Phase: **{phase_text}**  |  Wave#: **{wave_no}**  |  ZigZag: {zz_pct*100:.1f}% / {zz_min_bars} bars")
+                st.caption(f"🌀 Elliott Phase: **{phase_text}** |  Wave#: **{wave_no}** |  ZigZag: {zz_pct*100:.2f}% / {zz_min_bars} bars")
         else:
             st.warning("No chart data available.")
 
@@ -690,9 +685,7 @@ if run_analysis:
                         })
                     ml_df = pd.DataFrame(rows).sort_values(["ML_Pred", "Prob_Buy"], ascending=[True, False])
 
-                    def tradingview_link(ticker):
-                        return f"https://in.tradingview.com/chart/?symbol=NSE%3A{ticker.replace('.NS','')}"
-                    ml_df["TradingView"] = ml_df["Ticker"].apply(tradingview_link)
+                    ml_df["TradingView"] = ml_df["Ticker"].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE%3A{x.replace('.NS','')}")
 
                     st.dataframe(
                         ml_df,
@@ -709,20 +702,9 @@ if run_analysis:
         st.download_button(
             "📥 Download Rule-based Results (snapshot)",
             preds_rule.to_csv(index=False).encode(),
-            "nifty500_rule_signals.csv",
+            "nifty500_rule_signals_30min.csv",
             "text/csv",
         )
 
+st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
-
-
-
-
-
-
-
-
-
-
-
-
