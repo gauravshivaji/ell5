@@ -713,7 +713,7 @@ if run_analysis:
                     # --- MODIFICATION 2 START: Add Download Button ---
                     # Prepare a clean DataFrame for CSV download
                     csv_df = ml_df.drop(columns=['TradingView'], errors='ignore')
-                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    timestamp_str = datetime.now().strftime("%Y_%m_%d_%M_%H")
                 
                    
                     st.download_button(
@@ -735,4 +735,5 @@ if run_analysis:
 
 st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
+
 
