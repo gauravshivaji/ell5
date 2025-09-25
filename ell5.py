@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import ta
-from datetime import datetime  # <--- MODIFICATION 1: IMPORT DATETIME
+from datetime import datetime
 import pytz
 
 # ML imports (optional)
@@ -16,8 +16,10 @@ except Exception:
     SKLEARN_OK = False
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Nifty500 Intraday (30min) Predictor", layout="wide")
-st.title("📊 Nifty500 Intraday (30min) Predictor — Rules + Elliott Wave + ML")
+st.set_page_config(page_title="Nifty500 Intraday (1h) Predictor", layout="wide")
+# --- MODIFICATION: Updated Title ---
+st.title("📊 Nifty500 Intraday (1h) Predictor — Rules + Elliott Wave + ML")
+
 
 # ---------------- TICKERS ----------------
 NIFTY500_TICKERS = [
@@ -109,7 +111,8 @@ def stqdm(iterable, total=None, desc=""):
 
 # ---------------- DATA DOWNLOAD ----------------
 @st.cache_data(show_spinner=False)
-def download_data_multi(tickers, period="60d", interval="30m"):
+# --- MODIFICATION: Changed interval to "1h" ---
+def download_data_multi(tickers, period="60d", interval="1h"):
     if isinstance(tickers, str):
         tickers = [tickers]
     frames = []
@@ -132,7 +135,8 @@ def download_data_multi(tickers, period="60d", interval="30m"):
     return out
 
 @st.cache_data(show_spinner=False)
-def load_history_for_ticker(ticker, period="60d", interval="30m"):
+# --- MODIFICATION: Changed interval to "1h" ---
+def load_history_for_ticker(ticker, period="60d", interval="1h"):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, threads=True)
         return df
@@ -453,8 +457,9 @@ def label_from_rule_based(df, rsi_buy=30, rsi_sell=70):
     label[rules["Sell_Point"]] = -1
     return label
 
-def label_from_future_returns(df, horizon=13, buy_thr=0.01, sell_thr=-0.01):
-    # horizon=13 is approx 1 trading day on 30m chart
+# --- MODIFICATION: Changed horizon default to 7 for 1h chart ---
+def label_from_future_returns(df, horizon=7, buy_thr=0.01, sell_thr=-0.01):
+    # horizon=7 is approx 1 trading day on 1h chart
     fut_ret = df["Close"].shift(-horizon) / df["Close"] - 1.0
     label = pd.Series(0, index=df.index, dtype=int)
     label[fut_ret >= buy_thr] = 1
@@ -465,7 +470,8 @@ def label_from_future_returns(df, horizon=13, buy_thr=0.01, sell_thr=-0.01):
 def build_ml_dataset_for_tickers(
     tickers, sma_windows, support_window,
     label_mode="rule",
-    horizon=13, buy_thr=0.01, sell_thr=-0.01,
+    # --- MODIFICATION: Changed horizon default to 7 ---
+    horizon=7, buy_thr=0.01, sell_thr=-0.01,
     rsi_buy=30, rsi_sell=70,
     min_rows=250,
     zz_pct=0.005, zz_min_bars=10
@@ -474,7 +480,8 @@ def build_ml_dataset_for_tickers(
     feature_cols = None
 
     for t in stqdm(tickers, desc="Preparing ML data"):
-        hist = load_history_for_ticker(t, period="60d", interval="30m")
+        # --- MODIFICATION: Changed interval to "1h" ---
+        hist = load_history_for_ticker(t, period="60d", interval="1h")
         if hist is None or hist.empty or len(hist) < min_rows:
             continue
 
@@ -534,7 +541,8 @@ def train_rf_classifier(X, y, random_state=42):
     return clf, acc, report
 
 def latest_feature_row_for_ticker(ticker, sma_windows, support_window, feature_cols, zz_pct, zz_min_bars):
-    hist = load_history_for_ticker(ticker, period="60d", interval="30m")
+    # --- MODIFICATION: Changed interval to "1h" ---
+    hist = load_history_for_ticker(ticker, period="60d", interval="1h")
     if hist is None or hist.empty:
         return None
     feat = compute_features(hist, sma_windows, support_window, zz_pct, zz_min_bars).dropna()
@@ -562,7 +570,8 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Elliott (ZigZag) Tuning")
     zz_pct = st.slider("ZigZag reversal (%)", 0.1, 3.0, 0.5, step=0.1, help="Sensitivity for intraday swing detection (e.g., 0.5 = 0.5%).") / 100.0
-    zz_min_bars = st.slider("Min bars between pivots", 3, 25, 10)
+    # --- MODIFICATION: Changed default min_bars to 6 ---
+    zz_min_bars = st.slider("Min bars between pivots", 3, 25, 6)
 
     st.markdown("---")
     label_mode = st.radio("ML Labeling Mode", ["Rule-based (teach the rules)", "Future Returns"], index=0)
@@ -573,13 +582,15 @@ with st.sidebar:
         rsi_sell_lbl = st.slider("RSI Sell Threshold", 50, 95, 70)
         rsi_buy = rsi_buy_lbl
         rsi_sell = rsi_sell_lbl
-        ml_horizon, ml_buy_thr, ml_sell_thr = 13, 0.01, -0.01
+        # --- MODIFICATION: Changed horizon default to 7 ---
+        ml_horizon, ml_buy_thr, ml_sell_thr = 7, 0.01, -0.01
     else:
         st.subheader("Rule thresholds (for live rule signals only)")
         rsi_buy = st.slider("RSI Buy Threshold", 5, 50, 30)
         rsi_sell = st.slider("RSI Sell Threshold", 50, 95, 70)
         st.subheader("ML labeling (future return)")
-        ml_horizon = st.number_input("Horizon (periods ahead)", 2, 60, 13, help="13 periods is approx. 1 trading day")
+        # --- MODIFICATION: Changed horizon default and help text ---
+        ml_horizon = st.number_input("Horizon (periods ahead)", 2, 60, 7, help="7 periods is approx. 1 trading day on a 1h chart")
         ml_buy_thr = st.number_input("Buy threshold (e.g., 0.01 = +1%)", 0.001, 0.10, 0.01, step=0.001, format="%.3f")
         ml_sell_thr = st.number_input("Sell threshold (e.g., -0.01 = -1%)", -0.10, -0.001, -0.01, step=0.001, format="%.3f")
 
@@ -630,7 +641,8 @@ if run_analysis:
 
     with tab3:
         ticker_for_chart = st.selectbox("Chart Ticker", selected_tickers)
-        chart_df = load_history_for_ticker(ticker_for_chart, period="10d", interval="30m") # shorter period for clarity
+        # --- MODIFICATION: Changed interval to "1h" ---
+        chart_df = load_history_for_ticker(ticker_for_chart, period="10d", interval="1h") # shorter period for clarity
         if not chart_df.empty:
             chart_df = compute_features(chart_df, sma_tuple, support_window, zz_pct, zz_min_bars).dropna()
             if not chart_df.empty:
@@ -679,7 +691,6 @@ if run_analysis:
                         proba = clf.predict_proba(row)[0] if hasattr(clf, "predict_proba") else None
                         pred = clf.predict(row)
                         
-                        # --- MODIFICATION 1 START: Capture Close Price ---
                         close_price = row['Close'].iloc[0] if 'Close' in row.columns else np.nan
                         rows.append({
                             "Ticker": t,
@@ -689,7 +700,6 @@ if run_analysis:
                             "Prob_Hold": float(proba[list(clf.classes_).index(0)]) if proba is not None and 0 in clf.classes_ else np.nan,
                             "Prob_Sell": float(proba[list(clf.classes_).index(-1)]) if proba is not None and -1 in clf.classes_ else np.nan,
                         })
-                        # --- MODIFICATION 1 END ---
                         
                     ml_df = pd.DataFrame(rows).sort_values(["ML_Signal", "Prob_Buy"], ascending=[True, False])
 
@@ -710,35 +720,27 @@ if run_analysis:
                         }
                     )
 
-                    # --- MODIFICATION 2 START: Add Download Button ---
-                    # Prepare a clean DataFrame for CSV download
-               
                     IST = pytz.timezone('Asia/Kolkata')
                     timestamp_str = datetime.now(IST).strftime("%Y%m%d_%H%M%S")
                     csv_df = ml_df.drop(columns=['TradingView'], errors='ignore')
-                
-                   
+                    
+                    
                     st.download_button(
                         label="📥 Download ML Signals as CSV",
                         data=csv_df.to_csv(index=False).encode('utf-8'),
                         file_name=f'ml_signals_{timestamp_str}.csv',
                         mime='text/csv',
                     )
-                    # --- MODIFICATION 2 END ---
 
 
     if 'preds_rule' in locals() and preds_rule is not None and not preds_rule.empty:
+        # --- MODIFICATION: Changed filename ---
         st.download_button(
             "📥 Download Rule-based Results (snapshot)",
             preds_rule.to_csv(index=False).encode(),
-            "nifty500_rule_signals_30min.csv",
+            "nifty500_rule_signals_1h.csv",
             "text/csv",
         )
 
 st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
-
-
-
-
-
