@@ -689,7 +689,8 @@ if run_analysis:
                         if row is None:
                             continue
                         proba = clf.predict_proba(row)[0] if hasattr(clf, "predict_proba") else None
-                        pred = clf.predict(row)
+                        pred = int(clf.predict(row)[0])
+
                         
                         close_price = row['Close'].iloc[0] if 'Close' in row.columns else np.nan
                         rows.append({
@@ -744,3 +745,4 @@ if run_analysis:
 
 st.markdown("---")
 st.markdown("⚠ Educational use only — not financial advice.")
+
